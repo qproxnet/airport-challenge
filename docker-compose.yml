@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: airport_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: airportchallenge
+    networks:
+      - airport_net
+
+  backend:
+    build: ./backend
+    container_name: airport_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGO_URI=mongodb://mongodb:27017/airportchallenge
+      - JWT_SECRET=${JWT_SECRET:-changeme_use_strong_secret_in_production}
+    depends_on:
+      - mongodb
+    volumes:
+      - ./frontend:/app/frontend
+    networks:
+      - airport_net
+
+volumes:
+  mongo_data:
+
+networks:
+  airport_net:
+    driver: bridge

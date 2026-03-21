@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Airport Challenge</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════════ AUTH ══ -->
+  <div id="screen-auth" class="screen active">
+    <div class="auth-bg"></div>
+    <div class="auth-card">
+      <div class="logo">
+        <div class="logo-icon">✈</div>
+        <h1>Airport Challenge</h1>
+        <p class="logo-sub">Multiplayer Air Traffic Control</p>
+      </div>
+
+      <!-- Login form -->
+      <form id="form-login" class="auth-form active">
+        <div class="form-group">
+          <label>Benutzername oder E-Mail</label>
+          <input type="text" id="login-username" placeholder="tower@example.com" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label>Passwort</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="form-error"></div>
+        <button type="submit" class="btn-primary" id="btn-login">Einloggen</button>
+        <p class="form-switch">Noch kein Account? <a href="#" id="link-to-register">Registrieren</a></p>
+      </form>
+
+      <!-- Register form -->
+      <form id="form-register" class="auth-form">
+        <div class="form-group">
+          <label>Benutzername</label>
+          <input type="text" id="reg-username" placeholder="TowerControl1" autocomplete="username" minlength="3" maxlength="20" />
+        </div>
+        <div class="form-group">
+          <label>E-Mail</label>
+          <input type="email" id="reg-email" placeholder="pilot@example.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label>Passwort</label>
+          <input type="password" id="reg-password" placeholder="Mindestens 6 Zeichen" autocomplete="new-password" minlength="6" />
+        </div>
+        <div id="register-error" class="form-error"></div>
+        <button type="submit" class="btn-primary" id="btn-register">Account erstellen</button>
+        <p class="form-switch">Schon registriert? <a href="#" id="link-to-login">Einloggen</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ LOBBY ══ -->
+  <div id="screen-lobby" class="screen">
+    <div class="lobby-header">
+      <h2>Airport Challenge</h2>
+      <div class="lobby-user">
+        <span id="lobby-username"></span>
+        <button id="btn-logout" class="btn-icon" title="Logout">⏏</button>
+      </div>
+    </div>
+
+    <div class="lobby-tabs">
+      <button class="tab-btn active" data-tab="play">Spielen</button>
+      <button class="tab-btn" data-tab="leaderboard">Rangliste</button>
+    </div>
+
+    <!-- Play tab -->
+    <div id="tab-play" class="tab-content active">
+      <div class="section-title">Level auswählen</div>
+      <div id="level-list" class="level-list"></div>
+
+      <div class="section-title">Raum beitreten / erstellen</div>
+      <div class="room-join">
+        <input type="text" id="room-id-input" placeholder="Raum-ID (z.B. TOWER1)" maxlength="20" />
+        <button id="btn-join-room" class="btn-primary">Beitreten / Erstellen</button>
+      </div>
+      <p class="room-hint">Teile die Raum-ID mit einem Freund um zusammen zu spielen!</p>
+    </div>
+
+    <!-- Leaderboard tab -->
+    <div id="tab-leaderboard" class="tab-content">
+      <div class="section-title">Globale Rangliste</div>
+      <div id="leaderboard-list" class="leaderboard-list">
+        <div class="loading">Lade Rangliste…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ WAITING ══ -->
+  <div id="screen-waiting" class="screen">
+    <div class="waiting-content">
+      <div class="radar-spinner"></div>
+      <h2>Warte auf Mitspieler…</h2>
+      <p>Raum-ID: <strong id="waiting-room-id"></strong></p>
+      <div id="waiting-players" class="waiting-players"></div>
+      <button id="btn-start-game" class="btn-primary">Spiel starten</button>
+      <button id="btn-leave-room" class="btn-ghost">Raum verlassen</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ GAME ══ -->
+  <div id="screen-game" class="screen">
+    <!-- HUD top bar -->
+    <div id="hud-top">
+      <div class="hud-cell">
+        <div class="hud-label">SCORE</div>
+        <div class="hud-value" id="hud-score">0</div>
+      </div>
+      <div class="hud-cell hud-center">
+        <div class="hud-label" id="hud-level-name">Level 1</div>
+        <div class="hud-day">
+          <span id="hud-day">Tag 1</span>
+          <div class="day-bar"><div id="day-progress" class="day-fill"></div></div>
+        </div>
+      </div>
+      <div class="hud-cell hud-right">
+        <div class="hud-label">CRASHES</div>
+        <div class="hud-crashes" id="hud-crashes">
+          <span class="crash-dot active"></span>
+          <span class="crash-dot active"></span>
+          <span class="crash-dot active"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD bottom: selected plane info + commands -->
+    <div id="hud-bottom">
+      <div id="plane-info">
+        <div id="plane-callsign" class="plane-callsign">–</div>
+        <div id="plane-details" class="plane-details"></div>
+        <div id="plane-bonus" class="plane-bonus"></div>
+      </div>
+      <div id="cmd-buttons" class="cmd-buttons"></div>
+    </div>
+
+    <!-- Message log -->
+    <div id="msg-log"></div>
+
+    <!-- Players indicator -->
+    <div id="players-indicator"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ GAMEOVER ══ -->
+  <div id="screen-gameover" class="screen">
+    <div class="gameover-card">
+      <div id="gameover-icon" class="gameover-icon">💥</div>
+      <h2 id="gameover-title">Spiel vorbei</h2>
+      <p id="gameover-reason" class="gameover-reason"></p>
+      <div class="gameover-stats">
+        <div class="stat-row"><span>Score</span><strong id="go-score">0</strong></div>
+        <div class="stat-row"><span>Tag erreicht</span><strong id="go-day">1</strong></div>
+        <div class="stat-row"><span>Crashes</span><strong id="go-crashes">0</strong></div>
+      </div>
+      <button id="btn-play-again" class="btn-primary">Nochmal spielen</button>
+      <button id="btn-back-lobby" class="btn-ghost">Zurück zur Lobby</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
