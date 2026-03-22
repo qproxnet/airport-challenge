@@ -164,13 +164,26 @@ class App {
           <div class="level-desc">${lv.description}</div>
           ${lv.requiredScore ? `<div class="level-score">Benötigt: ${lv.requiredScore.toLocaleString()} Punkte</div>` : ''}
         </div>
+        ${!locked ? `<button class="level-play-btn">▶ SPIELEN</button>` : ''}
       `;
       if (!locked) {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('level-play-btn')) return;
           document.querySelectorAll('.level-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
           this.selectedLevel = lv.id;
         });
+        const playBtn = card.querySelector('.level-play-btn');
+        if (playBtn) {
+          playBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.level-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            this.selectedLevel = lv.id;
+            const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            this._joinRoom(roomId, lv.id);
+          });
+        }
       }
       list.appendChild(card);
     }
