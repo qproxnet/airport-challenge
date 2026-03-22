@@ -1,25 +1,21 @@
 'use strict';
 
 /**
- * AirportRenderer — draws the full game state onto an HTML5 Canvas.
- *
- * Coordinate system: game world (mapWidth × mapHeight) is scaled to fit the
- * canvas while preserving aspect ratio. All game coordinates are converted via
- * toCanvas() before drawing.
+ * AirportRenderer — draws a realistic top-down airport view on HTML5 Canvas.
  */
 class AirportRenderer {
   constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx    = canvas.getContext('2d');
-    this.scale  = 1;
+    this.canvas  = canvas;
+    this.ctx     = canvas.getContext('2d');
+    this.scale   = 1;
     this.offsetX = 0;
     this.offsetY = 0;
-    this.mapW   = 800;
-    this.mapH   = 560;
-    this.frame  = 0;
+    this.mapW    = 800;
+    this.mapH    = 560;
+    this.frame   = 0;
   }
 
-  // ── Layout ────────────────────────────────────────────────────────────────
+  // ── Layout ──────────────────────────────────────────────────────────────────
 
   resize(mapW, mapH) {
     this.mapW = mapW || this.mapW;
@@ -28,7 +24,6 @@ class AirportRenderer {
     const ch = this.canvas.clientHeight;
     this.canvas.width  = cw;
     this.canvas.height = ch;
-
     const scaleX = cw / this.mapW;
     const scaleY = ch / this.mapH;
     this.scale   = Math.min(scaleX, scaleY);
@@ -36,19 +31,11 @@ class AirportRenderer {
     this.offsetY = (ch - this.mapH * this.scale) / 2;
   }
 
-  // Convert game coords → canvas coords
-  toCanvas(x, y) {
-    return [x * this.scale + this.offsetX, y * this.scale + this.offsetY];
-  }
+  toCanvas(x, y) { return [x * this.scale + this.offsetX, y * this.scale + this.offsetY]; }
+  toGame(cx, cy)  { return [(cx - this.offsetX) / this.scale, (cy - this.offsetY) / this.scale]; }
+  s(v)            { return v * this.scale; }
 
-  // Convert canvas coords → game coords
-  toGame(cx, cy) {
-    return [(cx - this.offsetX) / this.scale, (cy - this.offsetY) / this.scale];
-  }
-
-  s(v) { return v * this.scale; }  // scale a size value
-
-  // ── Main draw ─────────────────────────────────────────────────────────────
+  // ── Main draw ───────────────────────────────────────────────────────────────
 
   draw(state, selectedId) {
     if (!state) return;
@@ -58,57 +45,92 @@ class AirportRenderer {
 
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    this._drawBackground(levelMeta);
+    this._drawTerrain(levelMeta);
+    this._drawApronAreas(levelMeta);
     this._drawTaxiways(levelMeta);
-    this._drawRunways(levelMeta, state.runway);
+    this._drawRunways(levelMeta, state.runways);
+    this._drawRunwayLighting(levelMeta);
     this._drawTerminal(levelMeta);
     this._drawGates(levelMeta, gates);
     this._drawHoldingFixes(levelMeta);
+    this._drawILSFunnels(levelMeta);
     this._drawApproachPaths(planes);
+    this._drawVelocityVectors(planes);
     this._drawPlanes(planes, selectedId);
   }
 
-  // ── Background / grid ─────────────────────────────────────────────────────
+  // ── Terrain ─────────────────────────────────────────────────────────────────
 
-  _drawBackground(meta) {
+  _drawTerrain(meta) {
     const ctx = this.ctx;
     const [x0, y0] = this.toCanvas(0, 0);
     const [x1, y1] = this.toCanvas(meta.mapWidth, meta.mapHeight);
     const w = x1 - x0, h = y1 - y0;
 
-    // Dark tarmac base
-    ctx.fillStyle = '#050e20';
+    // Outer void
+    ctx.fillStyle = '#010609';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+    // Airspace boundary glow
+    ctx.strokeStyle = 'rgba(0,180,255,0.12)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([this.s(8), this.s(12)]);
+    ctx.strokeRect(x0, y0, w, h);
+    ctx.setLineDash([]);
+
+    // Grass / terrain fill
+    ctx.fillStyle = '#071510';
+    ctx.fillRect(x0, y0, w, h);
+
+    // Subtle terrain texture (random dots)
+    ctx.fillStyle = 'rgba(0,40,20,0.5)';
+    const seed = 42;
+    for (let i = 0; i < 200; i++) {
+      const tx = x0 + ((i * 137 + seed) % w);
+      const ty = y0 + ((i * 211 + seed) % h);
+      ctx.beginPath();
+      ctx.arc(tx, ty, this.s(0.8), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // Radar grid
-    ctx.save();
-    ctx.strokeStyle = '#091a30';
-    ctx.lineWidth = 1;
-    const step = this.s(40);
+    ctx.strokeStyle = 'rgba(0,120,60,0.06)';
+    ctx.lineWidth = 0.5;
+    const step = this.s(50);
     for (let gx = x0 % step; gx < this.canvas.width; gx += step) {
       ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, this.canvas.height); ctx.stroke();
     }
     for (let gy = y0 % step; gy < this.canvas.height; gy += step) {
       ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(this.canvas.width, gy); ctx.stroke();
     }
-    ctx.restore();
 
-    // Grass / airspace area
-    ctx.fillStyle = '#060f1e';
-    ctx.fillRect(x0, y0, w, h);
-
-    // Subtle vignette
-    const grad = ctx.createRadialGradient(
-      x0 + w / 2, y0 + h / 2, this.s(50),
-      x0 + w / 2, y0 + h / 2, this.s(500)
-    );
-    grad.addColorStop(0, 'rgba(0,229,255,0.03)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.25)');
-    ctx.fillStyle = grad;
+    // Vignette
+    const vig = ctx.createRadialGradient(x0+w/2, y0+h/2, this.s(40), x0+w/2, y0+h/2, this.s(600));
+    vig.addColorStop(0, 'rgba(0,229,255,0.025)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = vig;
     ctx.fillRect(x0, y0, w, h);
   }
 
-  // ── Taxiways ──────────────────────────────────────────────────────────────
+  // ── Apron (tarmac areas) ────────────────────────────────────────────────────
+
+  _drawApronAreas(meta) {
+    const ctx = this.ctx;
+    if (!meta.terminal) return;
+    const t = meta.terminal;
+    // Large apron in front of terminal
+    const [ax, ay] = this.toCanvas(t.x - 30, t.y + t.height);
+    const aw = this.s(t.width + 60);
+    const ah = this.s(90);
+    ctx.fillStyle = '#0a1520';
+    ctx.fillRect(ax, ay, aw, ah);
+    // Apron edge line
+    ctx.strokeStyle = 'rgba(0,180,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ax, ay, aw, ah);
+  }
+
+  // ── Taxiways ────────────────────────────────────────────────────────────────
 
   _drawTaxiways(meta) {
     const ctx = this.ctx;
@@ -116,84 +138,161 @@ class AirportRenderer {
     for (const tw of meta.taxiways) {
       const [ax, ay] = this.toCanvas(tw.x1, tw.y1);
       const [bx, by] = this.toCanvas(tw.x2, tw.y2);
-      ctx.strokeStyle = '#1a2a3a';
+
+      // Taxiway surface
+      ctx.strokeStyle = '#111d2a';
       ctx.lineWidth   = this.s(tw.width || 14);
       ctx.lineCap     = 'round';
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
 
-      // Taxiway centre line (yellow dashed)
-      ctx.strokeStyle = '#2a2a00';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([this.s(6), this.s(6)]);
+      // Edge markings (white borders)
+      ctx.strokeStyle = 'rgba(200,180,80,0.12)';
+      ctx.lineWidth   = this.s((tw.width || 14) + 2);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+
+      // Yellow centreline
+      ctx.strokeStyle = 'rgba(255,200,0,0.35)';
+      ctx.lineWidth   = this.s(1.2);
+      ctx.setLineDash([this.s(8), this.s(6)]);
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
       ctx.setLineDash([]);
     }
   }
 
-  // ── Runways ───────────────────────────────────────────────────────────────
+  // ── Runways ─────────────────────────────────────────────────────────────────
 
-  _drawRunways(meta, runwayState) {
+  _drawRunways(meta, runwayStates) {
     const ctx = this.ctx;
     if (!meta.runways) return;
+
     for (const rw of meta.runways) {
       const [ax, ay] = this.toCanvas(rw.x1, rw.y1);
       const [bx, by] = this.toCanvas(rw.x2, rw.y2);
+      const rwState   = (runwayStates || []).find(r => r.id === rw.id);
+      const occupied  = rwState && rwState.occupied;
 
-      // Asphalt
-      const occupied = runwayState && runwayState.occupied;
-      ctx.strokeStyle = occupied ? '#2a1500' : '#1e2a38';
+      // Runway surface
+      ctx.strokeStyle = occupied ? '#1a1000' : '#16202e';
       ctx.lineWidth   = this.s(rw.width || 30);
       ctx.lineCap     = 'butt';
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
 
-      // White centre line dashes
-      ctx.strokeStyle = occupied ? '#664400' : '#334455';
+      // Runway edge lines (white)
+      const hw = this.s((rw.width || 30) / 2);
+      const angle = Math.atan2(by - ay, bx - ax);
+      const px = Math.sin(angle), py = -Math.cos(angle);
+
+      for (const side of [-1, 1]) {
+        ctx.strokeStyle = occupied ? 'rgba(255,80,0,0.2)' : 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ax + side * px * hw, ay + side * py * hw);
+        ctx.lineTo(bx + side * px * hw, by + side * py * hw);
+        ctx.stroke();
+      }
+
+      // Centreline dashes
+      ctx.strokeStyle = occupied ? 'rgba(255,120,0,0.3)' : 'rgba(255,255,255,0.12)';
       ctx.lineWidth   = 1.5;
-      ctx.setLineDash([this.s(15), this.s(10)]);
+      ctx.setLineDash([this.s(20), this.s(12)]);
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
       ctx.setLineDash([]);
 
       // Threshold markings
-      this._drawThreshold(rw.x1, rw.y1, rw.x2, rw.y2, rw.width, false);
-      this._drawThreshold(rw.x2, rw.y2, rw.x1, rw.y1, rw.width, true);
+      this._drawThreshold(rw, false);
+      this._drawThreshold(rw, true);
 
-      // Runway label
-      const mx = (rw.x1 + rw.x2) / 2;
-      const my = (rw.y1 + rw.y2) / 2 - 22;
-      const [lx, ly] = this.toCanvas(mx, my);
-      ctx.fillStyle = '#334455';
-      ctx.font = `${this.s(9)}px Courier New`;
+      // Runway designation label
+      const midX = (rw.x1 + rw.x2) / 2;
+      const midY = (rw.y1 + rw.y2) / 2 - 25;
+      const [lx, ly] = this.toCanvas(midX, midY);
+      ctx.fillStyle = 'rgba(150,180,200,0.35)';
+      ctx.font = `${this.s(10)}px 'Orbitron', monospace`;
       ctx.textAlign = 'center';
       ctx.fillText(rw.id || 'RW', lx, ly);
+
+      // Occupied indicator
+      if (occupied) {
+        const [mx, my] = this.toCanvas((rw.x1+rw.x2)/2, (rw.y1+rw.y2)/2);
+        const pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.3);
+        ctx.fillStyle = `rgba(255,80,0,${0.1 * pulse})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, this.s(18), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
-  _drawThreshold(x1, y1, x2, y2, rw_width, flip) {
-    const ctx = this.ctx;
-    const angle = Math.atan2(y2 - y1, x2 - x1);
+  _drawThreshold(rw, flip) {
+    const ctx  = this.ctx;
+    const x    = flip ? rw.x2 : rw.x1;
+    const y    = flip ? rw.y2 : rw.y1;
+    const angle = Math.atan2(rw.y2 - rw.y1, rw.x2 - rw.x1) + (flip ? Math.PI : 0);
     const perp  = angle + Math.PI / 2;
-    const hw    = (rw_width || 30) / 2 - 4;
-    const bars  = 6;
-    const bw    = hw / bars * 0.6;
+    const hw    = (rw.width || 30) / 2 - 3;
+    const bars  = 5;
 
     ctx.save();
-    const [cx, cy] = this.toCanvas(x1, y1);
+    const [cx, cy] = this.toCanvas(x, y);
     ctx.translate(cx, cy);
 
-    ctx.fillStyle = '#445566';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
     for (let i = -bars; i <= bars; i++) {
       const ox = Math.sin(perp) * i * this.s(hw / bars);
       const oy = -Math.cos(perp) * i * this.s(hw / bars);
-      ctx.fillRect(
-        ox - this.s(bw) / 2,
-        oy - this.s(4),
-        this.s(bw), this.s(8)
-      );
+      const bw = this.s(hw / bars * 0.55);
+      ctx.fillRect(ox - bw / 2, oy - this.s(3.5), bw, this.s(7));
     }
     ctx.restore();
   }
 
-  // ── Terminal & gates ──────────────────────────────────────────────────────
+  // ── Runway lighting ─────────────────────────────────────────────────────────
+
+  _drawRunwayLighting(meta) {
+    const ctx = this.ctx;
+    if (!meta.runways) return;
+    const pulse = 0.7 + 0.3 * Math.sin(this.frame * 0.05);
+
+    for (const rw of meta.runways) {
+      const hw = (rw.width || 30) / 2 + 3;
+      const angle = Math.atan2(rw.y2 - rw.y1, rw.x2 - rw.x1);
+      const perp  = angle + Math.PI / 2;
+      const len   = Math.hypot(rw.x2 - rw.x1, rw.y2 - rw.y1);
+      const steps = Math.floor(len / 35);
+
+      for (let i = 0; i <= steps; i++) {
+        const t  = i / steps;
+        const wx = rw.x1 + (rw.x2 - rw.x1) * t;
+        const wy = rw.y1 + (rw.y2 - rw.y1) * t;
+
+        for (const side of [-1, 1]) {
+          const lx = wx + Math.sin(perp) * hw * side;
+          const ly = wy - Math.cos(perp) * hw * side;
+          const [cx, cy] = this.toCanvas(lx, ly);
+
+          ctx.fillStyle = `rgba(255,255,200,${0.35 * pulse})`;
+          ctx.beginPath();
+          ctx.arc(cx, cy, this.s(1.2), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Threshold red lights
+      for (const [tx, ty] of [[rw.x1, rw.y1], [rw.x2, rw.y2]]) {
+        for (let i = -2; i <= 2; i++) {
+          const lx = tx + Math.sin(perp) * i * hw / 2;
+          const ly = ty - Math.cos(perp) * i * hw / 2;
+          const [cx, cy] = this.toCanvas(lx, ly);
+          ctx.fillStyle = `rgba(255,50,50,${0.6 * pulse})`;
+          ctx.beginPath();
+          ctx.arc(cx, cy, this.s(1.5), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  // ── Terminal ─────────────────────────────────────────────────────────────────
 
   _drawTerminal(meta) {
     if (!meta.terminal) return;
@@ -202,47 +301,104 @@ class AirportRenderer {
     const [tx, ty] = this.toCanvas(t.x, t.y);
     const tw = this.s(t.width), th = this.s(t.height);
 
-    ctx.fillStyle   = '#0d2040';
-    ctx.strokeStyle = '#1a4080';
-    ctx.lineWidth   = 1.5;
+    // Terminal shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.roundRect(tx + this.s(3), ty + this.s(3), tw, th, this.s(6));
+    ctx.fill();
+
+    // Terminal body
+    const termGrad = ctx.createLinearGradient(tx, ty, tx, ty + th);
+    termGrad.addColorStop(0, '#0f2d50');
+    termGrad.addColorStop(1, '#081e38');
+    ctx.fillStyle = termGrad;
+    ctx.strokeStyle = 'rgba(0,180,255,0.3)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.roundRect(tx, ty, tw, th, this.s(6));
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle   = '#2a5090';
-    ctx.font        = `bold ${this.s(10)}px Courier New`;
-    ctx.textAlign   = 'center';
+    // Windows
+    const winCount = Math.floor(t.width / 20);
+    for (let i = 0; i < winCount; i++) {
+      const wx = tx + this.s(10 + i * 20);
+      const wy = ty + this.s(8);
+      ctx.fillStyle = 'rgba(0,200,255,0.15)';
+      ctx.fillRect(wx, wy, this.s(10), this.s(th / this.scale - 16));
+    }
+
+    // TERMINAL label
+    ctx.fillStyle = 'rgba(100,180,255,0.7)';
+    ctx.font = `bold ${this.s(11)}px 'Orbitron', monospace`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('TERMINAL', tx + tw / 2, ty + th / 2);
+
+    // Jetway indicators
+    if (meta.gates) {
+      for (const g of meta.gates) {
+        const [gx, gy] = this.toCanvas(g.x, g.y + 4);
+        const [tx2, ty2] = this.toCanvas(g.x, t.y + t.height);
+        ctx.strokeStyle = 'rgba(0,150,255,0.25)';
+        ctx.lineWidth = this.s(4);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tx2, ty2);
+        ctx.lineTo(gx, gy);
+        ctx.stroke();
+      }
+    }
   }
 
+  // ── Gates ────────────────────────────────────────────────────────────────────
+
   _drawGates(meta, gateStates) {
-    const ctx = this.ctx;
+    const ctx      = this.ctx;
     const occupied = new Set((gateStates || []).filter(g => g.occupied).map(g => g.id));
 
     for (const g of (meta.gates || [])) {
       const [gx, gy] = this.toCanvas(g.x, g.y);
       const isOcc    = occupied.has(g.id);
-      const sz       = this.s(10);
+      const sz       = this.s(11);
 
-      ctx.fillStyle   = isOcc ? '#003388' : '#001a44';
-      ctx.strokeStyle = isOcc ? '#0066ff' : '#003377';
+      // Gate box
+      const gateGrad = ctx.createLinearGradient(gx - sz/2, gy - sz/2, gx + sz/2, gy + sz/2);
+      if (isOcc) {
+        gateGrad.addColorStop(0, '#004488');
+        gateGrad.addColorStop(1, '#002255');
+      } else {
+        gateGrad.addColorStop(0, '#1a2a3a');
+        gateGrad.addColorStop(1, '#0e1820');
+      }
+      ctx.fillStyle   = gateGrad;
+      ctx.strokeStyle = isOcc ? 'rgba(0,150,255,0.7)' : 'rgba(0,80,150,0.3)';
       ctx.lineWidth   = 1.5;
       ctx.beginPath();
-      ctx.rect(gx - sz / 2, gy - sz / 2, sz, sz);
+      ctx.roundRect(gx - sz/2, gy - sz/2, sz, sz, this.s(2));
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle    = isOcc ? '#66aaff' : '#335577';
-      ctx.font         = `${this.s(7)}px Courier New`;
+      if (isOcc) {
+        ctx.shadowColor = '#0088ff';
+        ctx.shadowBlur  = this.s(6);
+        ctx.strokeStyle = 'rgba(0,150,255,0.5)';
+        ctx.beginPath();
+        ctx.roundRect(gx - sz/2, gy - sz/2, sz, sz, this.s(2));
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // Gate label
+      ctx.fillStyle    = isOcc ? 'rgba(100,180,255,0.9)' : 'rgba(60,100,140,0.7)';
+      ctx.font         = `bold ${this.s(7)}px 'Orbitron', monospace`;
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(g.id, gx, gy);
     }
   }
 
-  // ── Holding fixes ─────────────────────────────────────────────────────────
+  // ── Holding fixes ────────────────────────────────────────────────────────────
 
   _drawHoldingFixes(meta) {
     const ctx = this.ctx;
@@ -250,36 +406,95 @@ class AirportRenderer {
       const [fx, fy] = this.toCanvas(f.x, f.y);
       const r        = this.s(f.radius || 65);
 
-      ctx.strokeStyle = 'rgba(0,100,160,0.25)';
+      // Holding ellipse
+      ctx.strokeStyle = 'rgba(0,150,200,0.18)';
       ctx.lineWidth   = 1;
-      ctx.setLineDash([this.s(4), this.s(6)]);
+      ctx.setLineDash([this.s(5), this.s(7)]);
       ctx.beginPath();
-      ctx.ellipse(fx, fy, r, r * 0.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(fx, fy, r, r * 0.55, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle    = 'rgba(0,100,160,0.3)';
-      ctx.font         = `${this.s(7)}px Courier New`;
+      // Fix point
+      ctx.fillStyle = 'rgba(0,180,220,0.4)';
+      ctx.beginPath();
+      ctx.arc(fx, fy, this.s(3), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fix label
+      ctx.fillStyle    = 'rgba(0,160,200,0.6)';
+      ctx.font         = `${this.s(8)}px 'Orbitron', monospace`;
       ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`HOLD ${f.id}`, fx, fy);
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(f.id, fx, fy - this.s(6));
     }
   }
 
-  // ── Approach path lines ───────────────────────────────────────────────────
+  // ── ILS approach funnels ─────────────────────────────────────────────────────
+
+  _drawILSFunnels(meta) {
+    const ctx = this.ctx;
+    if (!meta.runways) return;
+
+    for (const rw of meta.runways) {
+      const len   = Math.hypot(rw.x2 - rw.x1, rw.y2 - rw.y1);
+      const angle = Math.atan2(rw.y2 - rw.y1, rw.x2 - rw.x1);
+      const spread = 0.22; // funnel half-angle in radians
+
+      // Funnel from east threshold (landing west)
+      this._drawFunnel(rw.x2, rw.y2, angle + Math.PI, spread, 160);
+      // Funnel from west threshold (landing east)
+      this._drawFunnel(rw.x1, rw.y1, angle, spread, 160);
+    }
+  }
+
+  _drawFunnel(tx, ty, angle, spread, length) {
+    const ctx = this.ctx;
+    const [cx, cy] = this.toCanvas(tx, ty);
+    const rl = this.s(length);
+
+    const leftAngle  = angle - spread;
+    const rightAngle = angle + spread;
+
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rl);
+    grad.addColorStop(0, 'rgba(0,220,120,0.12)');
+    grad.addColorStop(1, 'rgba(0,220,120,0)');
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(leftAngle)  * rl, cy + Math.sin(leftAngle)  * rl);
+    ctx.lineTo(cx + Math.cos(rightAngle) * rl, cy + Math.sin(rightAngle) * rl);
+    ctx.closePath();
+    ctx.fill();
+
+    // Centreline
+    ctx.strokeStyle = 'rgba(0,220,120,0.12)';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([this.s(10), this.s(8)]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * rl, cy + Math.sin(angle) * rl);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Approach paths ───────────────────────────────────────────────────────────
 
   _drawApproachPaths(planes) {
     if (!planes) return;
     const ctx = this.ctx;
     for (const p of planes) {
-      if (!['approaching', 'on_final'].includes(p.state)) continue;
+      if (!['approaching', 'on_final', 'holding'].includes(p.state)) continue;
       if (!p.waypoints || p.waypoints.length === 0) continue;
 
       ctx.strokeStyle = p.warning
-        ? 'rgba(255,80,0,0.3)'
-        : 'rgba(0,200,100,0.2)';
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([this.s(5), this.s(7)]);
+        ? 'rgba(255,120,0,0.45)'
+        : p.state === 'on_final'
+          ? 'rgba(0,255,136,0.55)'
+          : 'rgba(0,180,255,0.25)';
+      ctx.lineWidth   = p.state === 'on_final' ? 2 : 1;
+      ctx.setLineDash([this.s(6), this.s(5)]);
       ctx.beginPath();
       const [sx, sy] = this.toCanvas(p.x, p.y);
       ctx.moveTo(sx, sy);
@@ -289,10 +504,53 @@ class AirportRenderer {
       }
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Waypoint dots
+      for (const wp of p.waypoints) {
+        const [wx, wy] = this.toCanvas(wp.x, wp.y);
+        ctx.fillStyle = p.state === 'on_final' ? 'rgba(0,255,136,0.5)' : 'rgba(0,180,255,0.35)';
+        ctx.beginPath();
+        ctx.arc(wx, wy, this.s(2.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
-  // ── Planes ────────────────────────────────────────────────────────────────
+  // ── Velocity vectors ─────────────────────────────────────────────────────────
+
+  _drawVelocityVectors(planes) {
+    if (!planes) return;
+    const ctx = this.ctx;
+    const airborne = ['approaching', 'on_final', 'holding', 'taking_off'];
+
+    for (const p of planes) {
+      if (!airborne.includes(p.state)) continue;
+      const [px, py] = this.toCanvas(p.x, p.y);
+      const rad  = p.heading * Math.PI / 180;
+      const vl   = this.s(p.speed * 18);
+      const col  = this._planeColor(p);
+
+      ctx.strokeStyle = col + '55';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(rad) * vl, py + Math.sin(rad) * vl);
+      ctx.stroke();
+
+      // Tick marks at 1/3 and 2/3
+      for (const t of [0.33, 0.66]) {
+        const tx = px + Math.cos(rad) * vl * t;
+        const ty = py + Math.sin(rad) * vl * t;
+        const perp = rad + Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(tx + Math.cos(perp) * this.s(3), ty + Math.sin(perp) * this.s(3));
+        ctx.lineTo(tx - Math.cos(perp) * this.s(3), ty - Math.sin(perp) * this.s(3));
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ── Planes ───────────────────────────────────────────────────────────────────
 
   _drawPlanes(planes, selectedId) {
     if (!planes) return;
@@ -300,7 +558,6 @@ class AirportRenderer {
       if (p.state === 'departed') continue;
       this._drawPlane(p, p.id === selectedId);
     }
-    // Draw labels on top
     for (const p of planes) {
       if (p.state === 'departed') continue;
       this._drawPlaneLabel(p, p.id === selectedId);
@@ -308,134 +565,211 @@ class AirportRenderer {
   }
 
   _planeColor(p) {
-    if (p.state === 'crashed')              return '#ff0000';
-    if (p.warning)                          return '#ff6600';
-    if (p.requestingDeparture)              return '#aa44ff';
-    if (p.state === 'approaching')          return '#ffcc00';
-    if (p.state === 'holding')              return '#888888';
+    if (p.state === 'crashed')                                        return '#ff2244';
+    if (p.warning)                                                    return '#ff7700';
+    if (p.requestingDeparture)                                        return '#cc44ff';
+    if (p.state === 'approaching')                                    return '#ffcc00';
+    if (p.state === 'holding')                                        return '#6699bb';
     if (['on_final','landing_roll','exiting_runway'].includes(p.state)) return '#00ff88';
-    if (p.state === 'taxiing_to_gate')      return '#00aaff';
-    if (p.state === 'at_gate')              return '#4488ff';
-    if (['taxiing_to_runway','holding_short'].includes(p.state)) return '#aa66ff';
-    if (p.state === 'taking_off')           return '#00ff88';
+    if (p.state === 'taxiing_to_gate')                               return '#00aaff';
+    if (p.state === 'at_gate')                                        return '#3366ff';
+    if (['taxiing_to_runway','holding_short'].includes(p.state))      return '#aa55ff';
+    if (p.state === 'taking_off')                                     return '#00ff88';
     return p.color || '#00ff88';
   }
 
   _drawPlane(p, selected) {
-    const ctx = this.ctx;
+    const ctx  = this.ctx;
     const [px, py] = this.toCanvas(p.x, p.y);
-    const sz  = this.s(p.size || 9);
-    const col = this._planeColor(p);
-    const rad = (p.heading || 0) * Math.PI / 180;
+    const sz   = this.s(p.size || 9);
+    const col  = this._planeColor(p);
+    const rad  = p.heading * Math.PI / 180;
 
-    // Pulsing selection ring
+    // Selection ring
     if (selected) {
-      const pulse = 0.6 + 0.4 * Math.sin(this.frame * 0.2);
-      ctx.strokeStyle = `rgba(0,229,255,${pulse})`;
+      const pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.18);
+      ctx.strokeStyle = `rgba(0,229,255,${0.6 + 0.4 * pulse})`;
       ctx.lineWidth   = 1.5;
       ctx.beginPath();
-      ctx.arc(px, py, sz * 2.2, 0, Math.PI * 2);
+      ctx.arc(px, py, sz * 2.8, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(0,229,255,${0.2 * pulse})`;
+      ctx.lineWidth   = 6;
+      ctx.beginPath();
+      ctx.arc(px, py, sz * 2.8, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     // Glow
-    const glow = ctx.createRadialGradient(px, py, 0, px, py, sz * 2);
-    glow.addColorStop(0, col + '66');
+    const glow = ctx.createRadialGradient(px, py, 0, px, py, sz * 3);
+    glow.addColorStop(0, col + '55');
     glow.addColorStop(1, 'transparent');
     ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(px, py, sz * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px, py, sz * 3, 0, Math.PI * 2); ctx.fill();
 
-    // Plane body: filled triangle pointing in heading direction
+    // Warning flash
+    if (p.warning && this.frame % 8 < 4) {
+      const wGlow = ctx.createRadialGradient(px, py, 0, px, py, sz * 4);
+      wGlow.addColorStop(0, 'rgba(255,100,0,0.5)');
+      wGlow.addColorStop(1, 'transparent');
+      ctx.fillStyle = wGlow;
+      ctx.beginPath(); ctx.arc(px, py, sz * 4, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // ── Aircraft sprite (top-down view) ──
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(rad);
 
     ctx.fillStyle   = col;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth   = 0.8;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth   = 0.7;
+
+    // Fuselage (elongated — nose to tail along +X axis)
     ctx.beginPath();
-    ctx.moveTo(sz * 1.6, 0);           // nose
-    ctx.lineTo(-sz * 0.8, -sz * 0.7); // left wing
-    ctx.lineTo(-sz * 0.5, 0);          // tail
-    ctx.lineTo(-sz * 0.8, sz * 0.7);  // right wing
+    ctx.moveTo(sz * 2.2, 0);
+    ctx.bezierCurveTo(sz * 2.2, -sz * 0.45, sz * 0.8, -sz * 0.5, -sz * 1.8, -sz * 0.35);
+    ctx.lineTo(-sz * 2.0, 0);
+    ctx.lineTo(-sz * 1.8, sz * 0.35);
+    ctx.bezierCurveTo(sz * 0.8, sz * 0.5, sz * 2.2, sz * 0.45, sz * 2.2, 0);
+    ctx.fill();
+    ctx.stroke();
+
+    // Main wings (swept back)
+    ctx.beginPath();
+    ctx.moveTo(sz * 0.5, 0);
+    ctx.lineTo(-sz * 0.5, -sz * 2.2);  // left wingtip
+    ctx.lineTo(-sz * 0.85, -sz * 2.2);
+    ctx.lineTo(-sz * 1.05, -sz * 0.4);
+    ctx.lineTo(sz * 0.5, 0);
+    ctx.lineTo(-sz * 1.05, sz * 0.4);
+    ctx.lineTo(-sz * 0.85, sz * 2.2);
+    ctx.lineTo(-sz * 0.5, sz * 2.2);   // right wingtip
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Warning flash
-    if (p.warning && this.frame % 6 < 3) {
-      ctx.fillStyle = 'rgba(255,80,0,0.5)';
+    // Horizontal stabilizer (tail)
+    ctx.beginPath();
+    ctx.moveTo(-sz * 1.5, 0);
+    ctx.lineTo(-sz * 1.8, -sz * 1.05);
+    ctx.lineTo(-sz * 2.05, -sz * 1.05);
+    ctx.lineTo(-sz * 1.75, 0);
+    ctx.lineTo(-sz * 2.05, sz * 1.05);
+    ctx.lineTo(-sz * 1.8, sz * 1.05);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Cockpit window highlight
+    ctx.fillStyle = 'rgba(150,220,255,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(sz * 1.6, 0, sz * 0.35, sz * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crash animation
+    if (p.state === 'crashed') {
+      const r = sz * (2 + (this.frame % 20) * 0.25);
+      const alpha = 1 - (this.frame % 20) / 20;
+      ctx.strokeStyle = `rgba(255,50,0,${alpha})`;
+      ctx.lineWidth   = 2;
       ctx.beginPath();
-      ctx.arc(0, 0, sz * 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     ctx.restore();
 
     // Departure request pulse
-    if (p.requestingDeparture && this.frame % 10 < 5) {
-      ctx.strokeStyle = '#aa44ff';
+    if (p.requestingDeparture) {
+      const expandR = ((this.frame % 25) / 25) * sz * 4;
+      const alpha   = 1 - expandR / (sz * 4);
+      ctx.strokeStyle = `rgba(180,60,255,${alpha})`;
       ctx.lineWidth   = 1.5;
       ctx.beginPath();
-      ctx.arc(px, py, sz * 3 + (this.frame % 10) * this.s(0.5), 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Crash animation
-    if (p.state === 'crashed') {
-      const r = sz * (2 + (this.frame % 15) * 0.3);
-      ctx.strokeStyle = `rgba(255,0,0,${1 - (this.frame % 15) / 15})`;
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.arc(px, py, sz * 1.5 + expandR, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
 
   _drawPlaneLabel(p, selected) {
-    const ctx = this.ctx;
+    const ctx  = this.ctx;
     const [px, py] = this.toCanvas(p.x, p.y);
-    const sz  = this.s(p.size || 9);
-    const col = this._planeColor(p);
+    const sz   = this.s(p.size || 9);
+    const col  = this._planeColor(p);
 
-    // Callsign tag
-    const lx = px + sz * 2.5;
-    const ly = py - sz;
-    const tag = p.callsign;
+    const lx = px + sz * 3;
+    const ly = py - sz * 1.5;
 
-    ctx.font = `${selected ? 'bold ' : ''}${this.s(9)}px Courier New`;
-    const tw = ctx.measureText(tag).width;
+    const stateIcons = {
+      approaching: '→',
+      holding:     '◎',
+      on_final:    '▼',
+      landing_roll: '▼',
+      exiting_runway: '◄',
+      taxiing_to_gate: '►',
+      at_gate:     '■',
+      taxiing_to_runway: '►',
+      holding_short: '▐',
+      taking_off:  '▲',
+      crashed:     '✕'
+    };
+    const icon = stateIcons[p.state] || '?';
+    const tag  = `${icon} ${p.callsign}`;
 
-    ctx.fillStyle = 'rgba(4,9,26,0.75)';
-    ctx.fillRect(lx - 2, ly - this.s(9) - 1, tw + 4, this.s(10) + 2);
+    ctx.font = `${selected ? 'bold ' : ''}${this.s(9)}px 'Share Tech Mono', monospace`;
+    const tw = ctx.measureText(tag).width + this.s(6);
+    const th = this.s(13);
 
-    ctx.fillStyle = selected ? '#ffffff' : col;
-    ctx.textAlign = 'left';
+    // Tag background
+    ctx.fillStyle = selected ? 'rgba(0,20,40,0.95)' : 'rgba(2,8,16,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(lx - this.s(3), ly - th + this.s(2), tw, th, this.s(3));
+    ctx.fill();
+
+    if (selected) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(lx - this.s(3), ly - th + this.s(2), tw, th, this.s(3));
+      ctx.stroke();
+    }
+
+    // Connector line
+    ctx.strokeStyle = col + '50';
+    ctx.lineWidth   = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(px + sz, py);
+    ctx.lineTo(lx - this.s(3), ly - th / 2 + this.s(2));
+    ctx.stroke();
+
+    // Callsign text
+    ctx.fillStyle    = selected ? '#ffffff' : col;
+    ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(tag, lx, ly);
 
-    // State indicator dot
-    ctx.fillStyle = col;
-    ctx.beginPath();
-    ctx.arc(lx - this.s(5), ly - this.s(4), this.s(2.5), 0, Math.PI * 2);
-    ctx.fill();
+    // Speed/altitude mini indicator for selected
+    if (selected) {
+      ctx.font      = `${this.s(7)}px 'Share Tech Mono', monospace`;
+      ctx.fillStyle = 'rgba(150,200,255,0.7)';
+      ctx.fillText(`${Math.round(p.speed * 60)} kts`, lx, ly + this.s(9));
+    }
   }
 
-  // ── Hit testing (find clicked plane) ─────────────────────────────────────
+  // ── Hit testing ──────────────────────────────────────────────────────────────
 
   hitTest(canvasX, canvasY, planes) {
     if (!planes) return null;
     const [gx, gy] = this.toGame(canvasX, canvasY);
-    const HIT_RADIUS = 20 / this.scale; // game units
+    const HIT_R    = 22 / this.scale;
 
     let best = null, bestDist = Infinity;
     for (const p of planes) {
       if (p.state === 'departed' || p.state === 'crashed') continue;
       const d = Math.hypot(p.x - gx, p.y - gy);
-      if (d < HIT_RADIUS && d < bestDist) {
-        bestDist = d;
-        best     = p;
-      }
+      if (d < HIT_R && d < bestDist) { bestDist = d; best = p; }
     }
     return best ? best.id : null;
   }

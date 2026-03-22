@@ -1,143 +1,151 @@
 /**
  * Level definitions for Airport Challenge.
- * Each level defines the airport layout, traffic parameters, and scoring.
  *
  * Coordinate system: (0,0) = top-left, x increases right, y increases down.
- * Map size is defined per level; the canvas scales to fit the screen.
+ * Map size is defined per level; the canvas scales to fit.
+ *
+ * taxiMainY: Y-coordinate of the primary parallel taxiway (used by engine for routing).
  */
 
 const LEVELS = {
   1: {
     id: 1,
     name: 'Greenfield Airport',
-    description: 'A quiet regional airport. Learn the basics of air traffic control.',
+    description: 'Quiet regional airport. Learn the basics of ATC — land and depart aircraft safely.',
     unlockRequirement: null,
     requiredScore: 0,
     passingScore: 4000,
-    mapWidth: 800,
-    mapHeight: 560,
+    mapWidth:  820,
+    mapHeight: 580,
 
-    // Single east-west runway
+    // Single east-west runway (RW09/27)
     runways: [
       {
-        id: 'RW',
-        x1: 100, y1: 300,   // RW09 threshold (land heading east)
-        x2: 700, y2: 300,   // RW27 threshold (land heading west)
-        width: 30
+        id: 'RW09/27',
+        x1: 95,  y1: 320,   // RW09 threshold — land heading east
+        x2: 710, y2: 320,   // RW27 threshold — land heading west
+        width: 32
       }
     ],
 
+    // taxiMainY: Y of the parallel taxiway (between runway and terminal)
+    taxiMainY: 248,
+
     taxiways: [
-      { x1: 80,  y1: 240, x2: 720, y2: 240, width: 14 }, // North parallel
-      { x1: 200, y1: 240, x2: 200, y2: 300, width: 14 }, // West exit
-      { x1: 600, y1: 240, x2: 600, y2: 300, width: 14 }, // East exit
-      { x1: 300, y1: 165, x2: 300, y2: 240, width: 14 }, // Gate 1 access
-      { x1: 370, y1: 165, x2: 370, y2: 240, width: 14 }, // Gate 2 access
-      { x1: 440, y1: 165, x2: 440, y2: 240, width: 14 }, // Gate 3 access
-      { x1: 510, y1: 165, x2: 510, y2: 240, width: 14 }  // Gate 4 access
+      // Main parallel taxiway (Taxiway Alpha)
+      { x1: 70,  y1: 248, x2: 740, y2: 248, width: 15 },
+      // Runway exits
+      { x1: 195, y1: 248, x2: 195, y2: 320, width: 15 },  // West exit
+      { x1: 610, y1: 248, x2: 610, y2: 320, width: 15 },  // East exit
+      // Gate access taxiways
+      { x1: 305, y1: 160, x2: 305, y2: 248, width: 14 },
+      { x1: 375, y1: 160, x2: 375, y2: 248, width: 14 },
+      { x1: 445, y1: 160, x2: 445, y2: 248, width: 14 },
+      { x1: 515, y1: 160, x2: 515, y2: 248, width: 14 }
     ],
 
-    terminal: { x: 260, y: 112, width: 290, height: 55 },
+    terminal: { x: 265, y: 108, width: 300, height: 54 },
 
     gates: [
-      { id: 'G1', x: 300, y: 155, taxiY: 240 },
-      { id: 'G2', x: 370, y: 155, taxiY: 240 },
-      { id: 'G3', x: 440, y: 155, taxiY: 240 },
-      { id: 'G4', x: 510, y: 155, taxiY: 240 }
+      { id: 'A1', x: 305, y: 150, taxiY: 248 },
+      { id: 'A2', x: 375, y: 150, taxiY: 248 },
+      { id: 'A3', x: 445, y: 150, taxiY: 248 },
+      { id: 'A4', x: 515, y: 150, taxiY: 248 }
     ],
 
-    // Points where aircraft enter the map
     entryPoints: [
-      { id: 'EP_EAST', x: 840, y: 300 },
-      { id: 'EP_WEST', x: -40, y: 300 },
-      { id: 'EP_NE',   x: 780, y: -40 },
+      { id: 'EP_EAST', x: 860, y: 320 },
+      { id: 'EP_WEST', x: -40, y: 320 },
+      { id: 'EP_NE',   x: 800, y: -40 },
       { id: 'EP_NW',   x: 20,  y: -40 }
     ],
 
     holdingFixes: [
-      { id: 'ALPHA', x: 700, y: 145, radius: 65 }, // East
-      { id: 'BRAVO', x: 100, y: 145, radius: 65 }  // West
+      { id: 'ALPHA', x: 720, y: 148, radius: 68 },   // East hold
+      { id: 'BRAVO', x: 100, y: 148, radius: 68 }    // West hold
     ],
 
-    spawnIntervalMs: 20000,   // 20 s between planes at day 1
+    spawnIntervalMs:    22000,
     maxConcurrentPlanes: 5,
 
     planeTypes: [
-      { type: 'airliner', label: 'Airliner', weight: 65, speed: 2.6, color: '#00ff88', size: 9 },
-      { type: 'prop',     label: 'Turboprop', weight: 35, speed: 3.2, color: '#44ddff', size: 7 }
+      { type: 'airliner',  label: 'Airliner',    weight: 60, speed: 2.5, color: '#00ff88', size: 9  },
+      { type: 'prop',      label: 'Turboprop',   weight: 40, speed: 3.0, color: '#44ddff', size: 7  }
     ],
 
-    dayDurationMs: 120000, // 2 min per day
+    dayDurationMs: 120000,
     maxDays: 5
   },
 
   2: {
     id: 2,
     name: 'Metro International',
-    description: 'Two crossing runways and heavier traffic. Stay sharp!',
+    description: 'Two runways and heavier traffic. Sequence arrivals carefully — one wrong call ends the day.',
     unlockRequirement: 1,
     requiredScore: 4000,
     passingScore: 10000,
-    mapWidth: 900,
-    mapHeight: 640,
+    mapWidth:  920,
+    mapHeight: 660,
 
     runways: [
       {
-        id: 'RW_EW',
-        x1: 80,  y1: 340,
-        x2: 820, y2: 340,
-        width: 30
+        id: 'RW18/36',
+        x1: 85,  y1: 355,
+        x2: 835, y2: 355,
+        width: 32
       },
       {
-        id: 'RW_NS',
-        x1: 450, y1: 80,
-        x2: 450, y2: 560,
+        id: 'RW09/27',
+        x1: 460, y1: 80,
+        x2: 460, y2: 570,
         width: 30,
         vertical: true
       }
     ],
 
+    taxiMainY: 290,
+
     taxiways: [
-      { x1: 80,  y1: 280, x2: 820, y2: 280, width: 14 },
-      { x1: 200, y1: 280, x2: 200, y2: 340, width: 14 },
-      { x1: 700, y1: 280, x2: 700, y2: 340, width: 14 },
-      { x1: 310, y1: 200, x2: 310, y2: 280, width: 14 },
-      { x1: 400, y1: 200, x2: 400, y2: 280, width: 14 },
-      { x1: 550, y1: 200, x2: 550, y2: 280, width: 14 },
-      { x1: 640, y1: 200, x2: 640, y2: 280, width: 14 }
+      { x1: 85,  y1: 290, x2: 835, y2: 290, width: 15 },
+      { x1: 200, y1: 290, x2: 200, y2: 355, width: 15 },
+      { x1: 720, y1: 290, x2: 720, y2: 355, width: 15 },
+      { x1: 320, y1: 210, x2: 320, y2: 290, width: 14 },
+      { x1: 410, y1: 210, x2: 410, y2: 290, width: 14 },
+      { x1: 560, y1: 210, x2: 560, y2: 290, width: 14 },
+      { x1: 650, y1: 210, x2: 650, y2: 290, width: 14 }
     ],
 
-    terminal: { x: 280, y: 145, width: 400, height: 58 },
+    terminal: { x: 290, y: 152, width: 410, height: 60 },
 
     gates: [
-      { id: 'G1', x: 310, y: 158, taxiY: 280 },
-      { id: 'G2', x: 390, y: 158, taxiY: 280 },
-      { id: 'G3', x: 470, y: 158, taxiY: 280 },
-      { id: 'G4', x: 550, y: 158, taxiY: 280 },
-      { id: 'G5', x: 630, y: 158, taxiY: 280 }
+      { id: 'B1', x: 320, y: 165, taxiY: 290 },
+      { id: 'B2', x: 400, y: 165, taxiY: 290 },
+      { id: 'B3', x: 480, y: 165, taxiY: 290 },
+      { id: 'B4', x: 560, y: 165, taxiY: 290 },
+      { id: 'B5', x: 640, y: 165, taxiY: 290 }
     ],
 
     entryPoints: [
-      { id: 'EP_EAST',  x: 940, y: 340 },
-      { id: 'EP_WEST',  x: -40, y: 340 },
-      { id: 'EP_NORTH', x: 450, y: -40 },
-      { id: 'EP_SOUTH', x: 450, y: 680 },
-      { id: 'EP_NE',    x: 860, y: -40 }
+      { id: 'EP_EAST',  x: 960, y: 355 },
+      { id: 'EP_WEST',  x: -40, y: 355 },
+      { id: 'EP_NORTH', x: 460, y: -40 },
+      { id: 'EP_SOUTH', x: 460, y: 700 },
+      { id: 'EP_NE',    x: 880, y: -40 }
     ],
 
     holdingFixes: [
-      { id: 'ALPHA',   x: 800, y: 195, radius: 65 },
-      { id: 'BRAVO',   x: 100, y: 195, radius: 65 },
-      { id: 'CHARLIE', x: 450, y: 600, radius: 65 }
+      { id: 'ALPHA',   x: 820, y: 195, radius: 68 },
+      { id: 'BRAVO',   x: 100, y: 195, radius: 68 },
+      { id: 'CHARLIE', x: 460, y: 610, radius: 68 }
     ],
 
-    spawnIntervalMs: 13000,
+    spawnIntervalMs:    14000,
     maxConcurrentPlanes: 8,
 
     planeTypes: [
-      { type: 'airliner', label: 'Airliner',  weight: 55, speed: 2.6, color: '#00ff88', size: 9 },
-      { type: 'prop',     label: 'Turboprop', weight: 25, speed: 3.2, color: '#44ddff', size: 7 },
-      { type: 'jet',      label: 'Private Jet', weight: 20, speed: 3.6, color: '#ffaa00', size: 7 }
+      { type: 'airliner',  label: 'Airliner',    weight: 55, speed: 2.5, color: '#00ff88', size: 9  },
+      { type: 'prop',      label: 'Turboprop',   weight: 25, speed: 3.0, color: '#44ddff', size: 7  },
+      { type: 'jet',       label: 'Private Jet', weight: 20, speed: 3.8, color: '#ffaa00', size: 7  }
     ],
 
     dayDurationMs: 90000,
